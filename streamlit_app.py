@@ -1,10 +1,12 @@
 import streamlit as st
 from difflib import SequenceMatcher
-from deepgram import Deepgram
+from deepgram import DeepgramClient, LiveOptions, PrerecordedOptions
 import asyncio
 import tempfile
 import json
 import os
+from dotenv import load_dotenv
+
 
 def landing_page():
     st.title("🎵 Rap Analyzer & Music Comparison")
@@ -17,35 +19,62 @@ def landing_page():
 
     st.sidebar.success("Select a page above ☝️")
 
-DEEPGRAM_API_KEY = "your_deepgram_api_key"
+# Replace with your Deepgram API Key
+load_dotenv()
+DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 
-async def transcribe_audio(audio_path):
-    """ Transcribes audio using Deepgram API """
+# Ensure API key is set
+if not DEEPGRAM_API_KEY:
+    st.error("Deepgram API key is missing! Please check your .env file.")
+
+def transcribe_audio(audio_path):
+    """ Transcribe an audio file using Deepgram's latest API """
+    if not os.path.exists(audio_path):
+        st.error("No file uploaded")
+        return "No file uploaded"
+
     try:
-        dg_client = Deepgram(DEEPGRAM_API_KEY)
-        with open(audio_path, "rb") as audio:
-            source = {"buffer": audio, "mimetype": "audio/wav"}  
-            response = await dg_client.transcription.prerecorded(source, {"punctuate": True})
-            return response["results"]["channels"][0]["alternatives"][0]["transcript"]
-    except Exception as e:
-        st.error(f"Error in transcription: {e}")
-        return None
+        deepgram = DeepgramClient(DEEPGRAM_API_KEY)
+
+        
+
+        with open(audio_path, "rb") as buffer_data:
+            payload = { 'buffer': buffer_data }  # Read file as bytes
+            
+        options = PrerecordedOptions(
+            smart_format=True, model="nova-2", language="en-US"
+        )
+
+        # Correct method for file transcription
+        response = deepgram.listen.prerecorded.v('1').transcribe_file(payload, options)
+        print(response)
+
+        # Extract transcript
+        transcript = response.results.channels[0].alternatives[0].transcript if response.results else "No transcript available"
+
+        return transcript
+
+    except Exception as err:
+        st.error(f"Error transcribing: {err}")
+        print(f"ERROR: {err}")  # Debugging error message
+        return "Error transcribing"
 
 def rap_analyzer():
+    """ Streamlit UI for Rap Analyzer """
     st.title("🎤 Rap Analyzer")
-    
-    uploaded_file = st.file_uploader("Upload your rap audio (MP3, WAV)", type=["mp3", "wav"])
-    
-    if uploaded_file:
-        st.success("File uploaded successfully!")
 
-        # Save uploaded file temporarily
+    uploaded_file = st.file_uploader("Upload your rap audio (MP3, WAV)", type=["mp3", "wav"])
+
+    if uploaded_file:
+        st.success(f"File uploaded: {uploaded_file.name}")
+
+        # Save file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
             temp_audio.write(uploaded_file.read())
             temp_audio_path = temp_audio.name
 
         if st.button("Analyze Rap"):
-            transcript = asyncio.run(transcribe_audio(temp_audio_path))
+            transcript = transcribe_audio(temp_audio_path)
             if transcript:
                 st.subheader("Transcribed Lyrics:")
                 st.write(transcript)
